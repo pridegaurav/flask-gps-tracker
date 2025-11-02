@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Live GPS Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Leaflet Map Library -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      background: #000;
+    }
+    #map {
+      width: 100%;
+      height: 100vh;
+    }
+
+    /* Red glowing dot marker */
+    .dot-marker {
+      width: 14px;
+      height: 14px;
+      background-color: red;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(255, 0, 0, 0.7);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <script>
+    const map = L.map("map").setView([0, 0], 2);
+
+    // OpenStreetMap tiles
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+
+    // Custom dot icon
+    const dotIcon = L.divIcon({
+      className: "dot-marker",
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+
+    const marker = L.marker([0, 0], { icon: dotIcon }).addTo(map);
+    let lastLat = 0;
+    let lastLng = 0;
+    let firstFix = true;
+
+    // Smooth marker movement
+    function smoothMove(start, end, steps = 20, delay = 100) {
+      const dLat = (end.lat - start.lat) / steps;
+      const dLng = (end.lng - start.lng) / steps;
+      let i = 0;
+      const interval = setInterval(() => {
+        i++;
+        const lat = start.lat + dLat * i;
+        const lng = start.lng + dLng * i;
+        marker.setLatLng([lat, lng]);
+        if (i >= steps) clearInterval(interval);
+      }, delay);
+    }
+
+    async function updateGPS() {
+      try {
+        const res = await fetch("/gps");
+        const data = await res.json();
+        if (data.lat && data.lng) {
+          const newPos = { lat: data.lat, lng: data.lng };
+          if (firstFix) {
+            map.setView(newPos, 15);
+            marker.setLatLng(newPos);
+            firstFix = false;
+          } else if (data.lat !== lastLat || data.lng !== lastLng) {
+            smoothMove({ lat: lastLat, lng: lastLng }, newPos);
+            map.panTo(newPos);
+          }
+          lastLat = data.lat;
+          lastLng = data.lng;
+        }
+      } catch (e) {
+        console.error("Error fetching GPS:", e);
+      }
+    }
+
+    // Update every 3 seconds
+    setInterval(updateGPS, 3000);
+  </script>
+</body>
+</html>
