@@ -2,29 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Live GPS Tracker</title>
+  <title>Live GPS Tracker with Route</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Leaflet Map Library -->
+  <!-- Leaflet Core -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+  <!-- Leaflet Routing Machine -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css"
+  />
+  <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
   <style>
     html, body {
       margin: 0;
       height: 100%;
-      width: 100%;
       background: #000;
     }
     #map {
-      width: 100%;
       height: 100vh;
+      width: 100%;
     }
 
-    /* Red glowing dot marker */
     .dot-marker {
       width: 14px;
       height: 14px;
@@ -33,22 +38,34 @@
       border-radius: 50%;
       box-shadow: 0 0 10px rgba(255, 0, 0, 0.7);
     }
+
+    #status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      font-size: 14px;
+      z-index: 1000;
+    }
   </style>
 </head>
 
 <body>
   <div id="map"></div>
+  <div id="status">GPS: OFFLINE</div>
 
   <script>
     const map = L.map("map").setView([0, 0], 2);
 
-    // OpenStreetMap tiles
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    // Custom dot icon
     const dotIcon = L.divIcon({
       className: "dot-marker",
       iconSize: [14, 14],
@@ -56,47 +73,49 @@
     });
 
     const marker = L.marker([0, 0], { icon: dotIcon }).addTo(map);
-    let lastLat = 0;
-    let lastLng = 0;
-    let firstFix = true;
-
-    // Smooth marker movement
-    function smoothMove(start, end, steps = 20, delay = 100) {
-      const dLat = (end.lat - start.lat) / steps;
-      const dLng = (end.lng - start.lng) / steps;
-      let i = 0;
-      const interval = setInterval(() => {
-        i++;
-        const lat = start.lat + dLat * i;
-        const lng = start.lng + dLng * i;
-        marker.setLatLng([lat, lng]);
-        if (i >= steps) clearInterval(interval);
-      }, delay);
-    }
+    const dest = [28.6139, 77.2090]; // 📍 Change destination (example: New Delhi)
+    let routeControl = null;
+    let lastLat = 0, lastLng = 0, firstFix = true;
 
     async function updateGPS() {
       try {
         const res = await fetch("/gps");
         const data = await res.json();
+        const live = data.live;
+        document.getElementById("status").innerText = live ? "GPS: LIVE 🟢" : "GPS: OFFLINE 🔴";
+
         if (data.lat && data.lng) {
-          const newPos = { lat: data.lat, lng: data.lng };
+          const newPos = [data.lat, data.lng];
+          marker.setLatLng(newPos);
+
           if (firstFix) {
             map.setView(newPos, 15);
-            marker.setLatLng(newPos);
             firstFix = false;
+            // Create route on first fix
+            routeControl = L.Routing.control({
+              waypoints: [L.latLng(newPos[0], newPos[1]), L.latLng(dest[0], dest[1])],
+              lineOptions: { styles: [{ color: "#00ff99", weight: 4 }] },
+              createMarker: () => null,
+              addWaypoints: false,
+              draggableWaypoints: false,
+              routeWhileDragging: false,
+              show: false
+            }).addTo(map);
           } else if (data.lat !== lastLat || data.lng !== lastLng) {
-            smoothMove({ lat: lastLat, lng: lastLng }, newPos);
             map.panTo(newPos);
+            // Update route
+            if (routeControl) {
+              routeControl.setWaypoints([L.latLng(newPos[0], newPos[1]), L.latLng(dest[0], dest[1])]);
+            }
           }
           lastLat = data.lat;
           lastLng = data.lng;
         }
-      } catch (e) {
-        console.error("Error fetching GPS:", e);
+      } catch (err) {
+        console.error("Error fetching GPS:", err);
       }
     }
 
-    // Update every 3 seconds
     setInterval(updateGPS, 3000);
   </script>
 </body>
